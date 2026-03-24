@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Game Accounts Store</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg: "#090d1a",
+            card: "#121a2f",
+            card2: "#1a2542",
+            accent: "#7c3aed",
+            accent2: "#22d3ee",
+            buy: "#22c55e",
+            danger: "#ef4444"
+          },
+          boxShadow: {
+            glow: "0 0 0 1px rgba(124,58,237,.35), 0 10px 30px rgba(34,211,238,.12)"
+          }
+        }
+      }
+    };
+  </script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-bg text-white min-h-screen antialiased">
+  <div class="max-w-md mx-auto min-h-screen flex flex-col">
+    <header class="sticky top-0 z-20 bg-bg/95 backdrop-blur border-b border-white/10 px-4 py-3">
+      <div class="flex items-center justify-between">
+        <h1 class="text-lg font-bold tracking-wide">Game Accounts Shop</h1>
+        <span class="text-xs text-cyan-300 bg-cyan-500/10 px-2 py-1 rounded-full border border-cyan-400/30">Web App</span>
+      </div>
+      <p class="text-xs text-slate-400 mt-1">Brawl Stars и другие игровые аккаунты</p>
+    </header>
+
+    <main id="app" class="flex-1 px-4 pb-24 pt-4">
+      <section id="view-catalog" class="space-y-3"></section>
+      <section id="view-cart" class="hidden space-y-3"></section>
+      <section id="view-support" class="hidden space-y-3"></section>
+    </main>
+
+    <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-bg/95 backdrop-blur border-t border-white/10">
+      <div class="grid grid-cols-3 text-xs">
+        <button data-tab="catalog" class="tab-btn py-3 flex flex-col items-center gap-1 text-accent2">
+          <i data-lucide="store" class="w-5 h-5"></i>
+          Каталог
+        </button>
+        <button data-tab="cart" class="tab-btn py-3 flex flex-col items-center gap-1 text-slate-400">
+          <i data-lucide="shopping-cart" class="w-5 h-5"></i>
+          Корзина/Покупки
+        </button>
+        <button data-tab="support" class="tab-btn py-3 flex flex-col items-center gap-1 text-slate-400">
+          <i data-lucide="message-circle" class="w-5 h-5"></i>
+          Поддержка
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <div id="product-modal" class="hidden fixed inset-0 z-40 bg-black/70 px-3 py-6">
+    <div class="max-w-md mx-auto bg-card rounded-2xl shadow-glow border border-white/10 overflow-hidden">
+      <div class="p-4 border-b border-white/10 flex items-center justify-between">
+        <h3 id="modal-title" class="font-semibold">Просмотр аккаунта</h3>
+        <button id="close-product-modal" class="text-slate-300 hover:text-white" aria-label="Закрыть">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-4 space-y-3">
+        <p id="modal-info" class="text-sm text-slate-300"></p>
+        <div id="modal-images" class="grid grid-cols-3 gap-2"></div>
+        <button id="go-channel-btn" class="hidden w-full py-2 rounded-xl bg-indigo-500/20 border border-indigo-300/30 text-indigo-200 font-medium">
+          Перейти в канал
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="payment-modal" class="hidden fixed inset-0 z-50 bg-black/70 px-3 py-6">
+    <div class="max-w-md mx-auto bg-card2 rounded-2xl shadow-glow border border-white/10 overflow-hidden">
+      <div class="p-4 border-b border-white/10 flex items-center justify-between">
+        <h3 class="font-semibold">Подтверждение оплаты</h3>
+        <button id="close-payment-modal" class="text-slate-300 hover:text-white" aria-label="Закрыть">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-4 space-y-3 text-sm">
+        <div class="rounded-xl bg-black/20 border border-white/10 p-3">
+          <p class="text-slate-300 mb-2">Реквизиты СБП:</p>
+          <p id="sbp-value" class="font-semibold text-cyan-300 break-all"></p>
+        </div>
+        <div class="rounded-xl bg-black/20 border border-white/10 p-3">
+          <p class="text-slate-200">Инструкция:</p>
+          <p id="payment-instruction" class="text-slate-300 mt-1"></p>
+        </div>
+        <button id="contact-seller-btn" class="w-full py-3 rounded-xl bg-buy text-black font-bold">
+          Связаться с продавцом для подтверждения
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ====== НАСТРОЙКИ / ДАННЫЕ ======
+    // Добавляйте новые аккаунты сюда.
+    const accounts = [
+      {
+        id: 101,
+        title: "Brawl Stars Аккаунт",
+        cups: 22000,
+        price: 2490,
+        shortInfo: "Много бойцов, хороший прогресс, безопасная передача.",
+        images: [
+          "https://placehold.co/600x900/151f3b/ffffff?text=Menu+101",
+          "https://placehold.co/600x900/1d2a4b/ffffff?text=Brawlers+101",
+          "https://placehold.co/600x900/213260/ffffff?text=Skins+101"
+        ]
+      },
+      {
+        id: 102,
+        title: "Brawl Stars Pro",
+        cups: 31000,
+        price: 3990,
+        shortInfo: "Высокий рейтинг, редкие скины, бонусы на старте.",
+        images: [
+          "https://placehold.co/600x900/1d2a4b/ffffff?text=Menu+102",
+          "https://placehold.co/600x900/24365f/ffffff?text=Brawlers+102",
+          "https://placehold.co/600x900/2b4180/ffffff?text=Skins+102"
+        ]
+      },
+      {
+        id: 103,
+        title: "Clash / Multi Game",
+        cups: 18000,
+        price: 1790,
+        shortInfo: "Для старта в нескольких играх, быстрая выдача.",
+        images: [
+          "https://placehold.co/600x900/13202f/ffffff?text=Menu+103",
+          "https://placehold.co/600x900/173045/ffffff?text=Heroes+103",
+          "https://placehold.co/600x900/1c3f5b/ffffff?text=Skins+103"
+        ]
+      }
+    ];
+
+    const STORE_KEY = "tg_game_store_cart_v1";
+    const PURCHASES_KEY = "tg_game_store_purchases_v1";
+
+    // Поменяйте значения под ваш проект:
+    const SELLER_USERNAME = "your_seller_username"; // без @
+    const CHANNEL_URL = "https://t.me/your_channel";
+    const SBP_DETAILS = "+7 900 000-00-00 (СБП, Банк ХХХ)";
+
+    const viewedFromTgPost =
+      /t\.me/.test(document.referrer) ||
+      new URLSearchParams(window.location.search).get("from") === "tg-post" ||
+      (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.start_param === "post");
+
+    // ====== STATE ======
+    let cart = loadArray(STORE_KEY);
+    let purchases = loadArray(PURCHASES_KEY);
+    let selectedAccountForPayment = null;
+    let selectedAccountForModal = null;
+
+    // ====== HELPERS ======
+    function loadArray(key) {
+      try {
+        const data = localStorage.getItem(key);
+        const parsed = data ? JSON.parse(data) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function saveArray(key, value) {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+
+    function formatPrice(price) {
+      return new Intl.NumberFormat("ru-RU").format(price) + " ₽";
+    }
+
+    function getById(id) {
+      return accounts.find((item) => item.id === id);
+    }
+
+    // ====== RENDER ======
+    const viewCatalog = document.getElementById("view-catalog");
+    const viewCart = document.getElementById("view-cart");
+    const viewSupport = document.getElementById("view-support");
+
+    function renderCatalog() {
+      if (!accounts.length) {
+        viewCatalog.innerHTML = '<p class="text-slate-400 text-sm">Нет доступных аккаунтов.</p>';
+        return;
+      }
+
+      viewCatalog.innerHTML = accounts.map((acc) => {
+        const inCart = cart.includes(acc.id);
+        return `
+          <article class="bg-card rounded-2xl p-4 border border-white/10 shadow-glow">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h2 class="font-semibold">${acc.title} #${acc.id}</h2>
+                <p class="text-xs text-slate-400 mt-1">${acc.shortInfo}</p>
+              </div>
+              <span class="text-cyan-300 text-sm font-semibold">${formatPrice(acc.price)}</span>
+            </div>
+            <div class="mt-3 flex items-center justify-between">
+              <span class="text-xs px-2 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-200">${acc.cups} кубков</span>
+              <div class="flex gap-2">
+                <button class="details-btn px-3 py-2 rounded-xl text-xs bg-black/30 border border-white/10" data-id="${acc.id}">
+                  Подробнее
+                </button>
+                <button class="cart-btn px-3 py-2 rounded-xl text-xs font-semibold ${inCart ? "bg-slate-600 text-slate-200" : "bg-accent text-white"}" data-id="${acc.id}">
+                  ${inCart ? "В корзине" : "В корзину"}
+                </button>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join("");
+
+      bindCatalogEvents();
+      lucide.createIcons();
+    }
+
+    function renderCart() {
+      const cartAccounts = cart.map(getById).filter(Boolean);
+      const total = cartAccounts.reduce((sum, a) => sum + a.price, 0);
+
+      const cartHtml = cartAccounts.length
+        ? cartAccounts.map((acc) => `
+            <article class="bg-card rounded-2xl p-4 border border-white/10">
+              <div class="flex justify-between gap-2">
+                <div>
+                  <h3 class="font-semibold">${acc.title} #${acc.id}</h3>
+                  <p class="text-xs text-slate-400">${acc.cups} кубков</p>
+                </div>
+                <span class="text-cyan-300 font-semibold">${formatPrice(acc.price)}</span>
+              </div>
+              <div class="mt-3 flex gap-2">
+                <button class="pay-btn flex-1 py-2 rounded-xl bg-buy text-black font-bold text-sm" data-id="${acc.id}">Оплатить</button>
+                <button class="remove-btn px-3 py-2 rounded-xl bg-danger/20 border border-danger/30 text-red-200 text-sm" data-id="${acc.id}">Убрать</button>
+              </div>
+            </article>
+          `).join("")
+        : '<p class="text-slate-400 text-sm">Корзина пуста. Добавьте аккаунт из каталога.</p>';
+
+      const purchasesHtml = purchases.length
+        ? purchases.map((id) => {
+            const acc = getById(id);
+            if (!acc) return "";
+            return `
+              <li class="text-sm text-slate-300 border border-white/10 rounded-lg px-3 py-2">
+                Покупка в обработке: аккаунт #${acc.id} (${acc.title})
+              </li>
+            `;
+          }).join("")
+        : '<p class="text-slate-500 text-xs">Пока нет покупок.</p>';
+
+      viewCart.innerHTML = `
+        <section class="space-y-3">
+          ${cartHtml}
+        </section>
+        <section class="bg-card rounded-2xl border border-white/10 p-4">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-slate-300">Сумма в корзине</span>
+            <span class="font-bold text-cyan-300">${formatPrice(total)}</span>
+          </div>
+        </section>
+        <section class="bg-card rounded-2xl border border-white/10 p-4">
+          <h4 class="font-semibold mb-2">Покупки</h4>
+          <div class="space-y-2">${purchasesHtml}</div>
+        </section>
+      `;
+
+      bindCartEvents();
+      lucide.createIcons();
+    }
+
+    function renderSupport() {
+      const baseText = encodeURIComponent("Здравствуйте! Нужна консультация по аккаунтам.");
+      viewSupport.innerHTML = `
+        <article class="bg-card rounded-2xl p-4 border border-white/10 space-y-3">
+          <h2 class="font-semibold">Поддержка</h2>
+          <p class="text-sm text-slate-300">Свяжитесь с продавцом в Telegram, чтобы задать вопросы по наличию, передаче и гарантиям.</p>
+          <a
+            href="https://t.me/${SELLER_USERNAME}?text=${baseText}"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-white font-semibold"
+          >
+            <i data-lucide="send" class="w-4 h-4"></i>
+            Написать продавцу
+          </a>
+        </article>
+      `;
+
+      lucide.createIcons();
+    }
+
+    // ====== EVENTS ======
+    function bindCatalogEvents() {
+      document.querySelectorAll(".details-btn").forEach((btn) => {
+        btn.addEventListener("click", () => openProductModal(Number(btn.dataset.id)));
+      });
+
+      document.querySelectorAll(".cart-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = Number(btn.dataset.id);
+          if (!cart.includes(id)) {
+            cart.push(id);
+            saveArray(STORE_KEY, cart);
+            renderCatalog();
+            renderCart();
+          }
+        });
+      });
+    }
+
+    function bindCartEvents() {
+      document.querySelectorAll(".remove-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = Number(btn.dataset.id);
+          cart = cart.filter((x) => x !== id);
+          saveArray(STORE_KEY, cart);
+          renderCatalog();
+          renderCart();
+        });
+      });
+
+      document.querySelectorAll(".pay-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = Number(btn.dataset.id);
+          openPaymentModal(id);
+        });
+      });
+    }
+
+    // ====== TABS ======
+    function setTab(tab) {
+      const allTabs = document.querySelectorAll(".tab-btn");
+      allTabs.forEach((btn) => {
+        const isActive = btn.dataset.tab === tab;
+        btn.classList.toggle("text-accent2", isActive);
+        btn.classList.toggle("text-slate-400", !isActive);
+      });
+
+      viewCatalog.classList.toggle("hidden", tab !== "catalog");
+      viewCart.classList.toggle("hidden", tab !== "cart");
+      viewSupport.classList.toggle("hidden", tab !== "support");
+    }
+
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => setTab(btn.dataset.tab));
+    });
+
+    // ====== PRODUCT MODAL ======
+    const productModal = document.getElementById("product-modal");
+    const modalTitle = document.getElementById("modal-title");
+    const modalInfo = document.getElementById("modal-info");
+    const modalImages = document.getElementById("modal-images");
+    const goChannelBtn = document.getElementById("go-channel-btn");
+
+    function openProductModal(id) {
+      const acc = getById(id);
+      if (!acc) return;
+      selectedAccountForModal = acc;
+
+      modalTitle.textContent = `${acc.title} #${acc.id}`;
+      modalInfo.textContent = `${acc.cups} кубков · ${formatPrice(acc.price)} · ${acc.shortInfo}`;
+      modalImages.innerHTML = acc.images.map((src, index) => `
+        <a href="${src}" target="_blank" rel="noopener noreferrer" class="block rounded-lg overflow-hidden border border-white/10">
+          <img src="${src}" alt="Скриншот ${index + 1}" class="w-full h-28 object-cover" />
+        </a>
+      `).join("");
+
+      if (viewedFromTgPost) {
+        goChannelBtn.classList.remove("hidden");
+      } else {
+        goChannelBtn.classList.add("hidden");
+      }
+
+      productModal.classList.remove("hidden");
+    }
+
+    function closeProductModal() {
+      selectedAccountForModal = null;
+      productModal.classList.add("hidden");
+    }
+
+    document.getElementById("close-product-modal").addEventListener("click", closeProductModal);
+    productModal.addEventListener("click", (e) => {
+      if (e.target === productModal) closeProductModal();
+    });
+    goChannelBtn.addEventListener("click", () => {
+      window.open(CHANNEL_URL, "_blank");
+    });
+
+    // ====== PAYMENT MODAL ======
+    const paymentModal = document.getElementById("payment-modal");
+    const sbpValue = document.getElementById("sbp-value");
+    const paymentInstruction = document.getElementById("payment-instruction");
+    const contactSellerBtn = document.getElementById("contact-seller-btn");
+
+    function openPaymentModal(id) {
+      const acc = getById(id);
+      if (!acc) return;
+      selectedAccountForPayment = acc;
+
+      sbpValue.textContent = SBP_DETAILS;
+      paymentInstruction.textContent = `Оплатите ${formatPrice(acc.price)} и прикрепите скриншот чека в чат с продавцом.`;
+      paymentModal.classList.remove("hidden");
+    }
+
+    function closePaymentModal() {
+      selectedAccountForPayment = null;
+      paymentModal.classList.add("hidden");
+    }
+
+    document.getElementById("close-payment-modal").addEventListener("click", closePaymentModal);
+    paymentModal.addEventListener("click", (e) => {
+      if (e.target === paymentModal) closePaymentModal();
+    });
+
+    contactSellerBtn.addEventListener("click", () => {
+      if (!selectedAccountForPayment) return;
+      const acc = selectedAccountForPayment;
+      const text = encodeURIComponent(`Я хочу купить аккаунт №${acc.id}`);
+      const link = `https://t.me/${SELLER_USERNAME}?text=${text}`;
+
+      if (!purchases.includes(acc.id)) {
+        purchases.push(acc.id);
+        saveArray(PURCHASES_KEY, purchases);
+      }
+
+      window.open(link, "_blank");
+      closePaymentModal();
+      renderCart();
+    });
+
+    // ====== INIT ======
+    renderCatalog();
+    renderCart();
+    renderSupport();
+    setTab("catalog");
+    lucide.createIcons();
+  </script>
+</body>
+</html>
