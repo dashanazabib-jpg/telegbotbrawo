@@ -41,10 +41,11 @@
       <section id="view-catalog" class="space-y-3"></section>
       <section id="view-cart" class="hidden space-y-3"></section>
       <section id="view-support" class="hidden space-y-3"></section>
+      <section id="view-admin" class="hidden space-y-3"></section>
     </main>
 
     <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-bg/95 backdrop-blur border-t border-white/10">
-      <div class="grid grid-cols-3 text-xs">
+      <div class="grid grid-cols-4 text-xs">
         <button data-tab="catalog" class="tab-btn py-3 flex flex-col items-center gap-1 text-accent2">
           <i data-lucide="store" class="w-5 h-5"></i>
           Каталог
@@ -56,6 +57,10 @@
         <button data-tab="support" class="tab-btn py-3 flex flex-col items-center gap-1 text-slate-400">
           <i data-lucide="message-circle" class="w-5 h-5"></i>
           Поддержка
+        </button>
+        <button data-tab="admin" class="tab-btn py-3 flex flex-col items-center gap-1 text-slate-400">
+          <i data-lucide="key" class="w-5 h-5"></i>
+          Админ
         </button>
       </div>
     </nav>
@@ -105,8 +110,8 @@
 
   <script>
     // ====== НАСТРОЙКИ / ДАННЫЕ ======
-    // Добавляйте новые аккаунты сюда.
-    const accounts = [
+    // Шаблон товаров. В реальной работе используется localStorage.
+    const DEFAULT_PRODUCTS = [
       {
         id: 101,
         title: "Brawl Stars Аккаунт",
@@ -147,6 +152,11 @@
 
     const STORE_KEY = "tg_game_store_cart_v1";
     const PURCHASES_KEY = "tg_game_store_purchases_v1";
+    const PRODUCTS_KEY = "tg_game_store_products_v1";
+
+    // Пароль для вкладки админа:
+    const ADMIN_PASSWORD = "dsdghhmok8805j";
+    const ADMIN_AUTH_KEY = "tg_game_store_admin_authed_v1";
 
     // Поменяйте значения под ваш проект:
     const SELLER_USERNAME = "your_seller_username"; // без @
@@ -159,8 +169,16 @@
       (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.start_param === "post");
 
     // ====== STATE ======
+    // Товары редактируются админом и сохраняются в localStorage.
+    let accounts = loadArray(PRODUCTS_KEY);
+    if (!accounts.length) {
+      accounts = DEFAULT_PRODUCTS;
+      saveArray(PRODUCTS_KEY, accounts);
+    }
+
     let cart = loadArray(STORE_KEY);
     let purchases = loadArray(PURCHASES_KEY);
+    let adminAuthed = sessionStorage.getItem(ADMIN_AUTH_KEY) === "1";
     let selectedAccountForPayment = null;
     let selectedAccountForModal = null;
 
@@ -183,14 +201,63 @@
       return new Intl.NumberFormat("ru-RU").format(price) + " ₽";
     }
 
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
     function getById(id) {
       return accounts.find((item) => item.id === id);
+    }
+
+    function normalizeImagesInput(text) {
+      // Важно: base64 `data:` URL содержит запятую (`data:...;base64,....`),
+      // поэтому делим на фото по переносам строк. Запятые поддерживаем только для не-`data:` ссылок.
+      const lines = String(text || "")
+        .split(/\n+/g)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      return lines.flatMap((line) => {
+        if (/^data:/i.test(line)) return [line];
+        return line
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      });
+    }
+
+    async function readFilesAsDataUrls(fileList) {
+      const files = Array.from(fileList || []);
+      const readers = files.map(
+        (file) =>
+          new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          })
+      );
+      return Promise.all(readers);
+    }
+
+    function sanitizeCartPurchases() {
+      const ids = new Set(accounts.map((a) => a.id));
+      cart = Array.isArray(cart) ? cart.filter((id) => ids.has(id)) : [];
+      purchases = Array.isArray(purchases) ? purchases.filter((id) => ids.has(id)) : [];
+      saveArray(STORE_KEY, cart);
+      saveArray(PURCHASES_KEY, purchases);
     }
 
     // ====== RENDER ======
     const viewCatalog = document.getElementById("view-catalog");
     const viewCart = document.getElementById("view-cart");
     const viewSupport = document.getElementById("view-support");
+    const viewAdmin = document.getElementById("view-admin");
 
     function renderCatalog() {
       if (!accounts.length) {
@@ -303,6 +370,176 @@
       lucide.createIcons();
     }
 
+    function renderAdmin() {
+      if (!adminAuthed) {
+        viewAdmin.innerHTML = `
+          <article class="bg-card rounded-2xl p-4 border border-white/10 space-y-3">
+            <h2 class="font-semibold flex items-center gap-2">
+              <i data-lucide="key" class="w-5 h-5 text-cyan-200"></i>
+              Вход администратора
+            </h2>
+            <p class="text-sm text-slate-300">Введите пароль, чтобы добавлять и редактировать товары.</p>
+            <div class="space-y-2">
+              <label class="text-xs text-slate-300">Пароль</label>
+              <input id="admin-password" type="password" class="w-full px-3 py-2 rounded-xl bg-black/20 border border-white/10 text-white" placeholder="••••••••••" />
+              <p id="admin-login-error" class="hidden text-sm text-red-200"></p>
+              <button id="admin-login-btn" class="w-full py-3 rounded-xl bg-accent text-white font-bold flex items-center justify-center gap-2">
+                <i data-lucide="log-in" class="w-4 h-4"></i>
+                Войти
+              </button>
+            </div>
+          </article>
+        `;
+        lucide.createIcons();
+        return;
+      }
+
+      const productsHtml = accounts.length
+        ? accounts
+            .slice()
+            .sort((a, b) => a.id - b.id)
+            .map((acc) => {
+              const imagesText = (acc.images || []).join("\n");
+              const previewImages = (acc.images || []).slice(0, 3);
+              return `
+                <article class="bg-card rounded-2xl p-4 border border-white/10 space-y-3">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-xs text-slate-400">
+                      ID: <span class="text-cyan-300 font-mono">#${acc.id}</span>
+                    </div>
+                    <button class="admin-delete-btn px-3 py-2 rounded-xl text-xs bg-danger/20 border border-danger/30 text-red-200" data-id="${acc.id}">
+                      Удалить
+                    </button>
+                  </div>
+
+                  <div class="space-y-2">
+                    <label class="text-xs text-slate-300">Название</label>
+                    <input class="admin-edit-title w-full px-3 py-2 rounded-xl bg-black/20 border border-white/10 text-white" data-id="${acc.id}" value="${escapeHtml(acc.title)}" />
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2">
+                    <div class="space-y-2">
+                      <label class="text-xs text-slate-300">Кубков</label>
+                      <input type="number" inputmode="numeric" class="admin-edit-cups w-full px-3 py-2 rounded-xl bg-black/20 border border-white/10 text-white" data-id="${acc.id}" value="${acc.cups}" />
+                    </div>
+                    <div class="space-y-2">
+                      <label class="text-xs text-slate-300">Цена</label>
+                      <input type="number" inputmode="numeric" class="admin-edit-price w-full px-3 py-2 rounded-xl bg-black/20 border border-white/10 text-white" data-id="${acc.id}" value="${acc.price}" />
+                    </div>
+                  </div>
+
+                  <div class="space-y-2">
+                    <label class="text-xs text-slate-300">Описание</label>
+                    <textarea class="admin-edit-shortInfo w-full px-3 py-2 rounded-xl bg-black/20 border border-white/10 text-white" data-id="${acc.id}" rows="2">${escapeHtml(acc.shortInfo)}</textarea>
+                  </div>
+
+                  <div class="space-y-2">
+                    <label class="text-xs text-slate-300">Фото (URL или base64). Каждая строка = одно фото</label>
+                    <textarea class="admin-edit-images-urls w-full px-3 py-2 rounded-xl bg-black/20 border border-white/10 text-white" data-id="${acc.id}" rows="3">${escapeHtml(imagesText)}</textarea>
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="text-[11px] text-slate-400">Превью:</div>
+                      <div class="text-[11px] text-slate-400">${(acc.images || []).length} фото</div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2">
+                      ${previewImages
+                        .map(
+                          (src, idx) => `
+                          <a href="${src}" target="_blank" rel="noopener noreferrer" class="block rounded-lg overflow-hidden border border-white/10">
+                            <img src="${src}" alt="Фото ${idx + 1}" class="w-full h-16 object-cover" />
+                          </a>
+                        `
+                        )
+                        .join("")}
+                    </div>
+                    <div class="space-y-2">
+                      <label class="text-xs text-slate-300">Добавить фото файлом</label>
+                      <input type="file" accept="image/*" multiple class="admin-edit-images-files w-full text-sm text-slate-200" data-id="${acc.id}" />
+                    </div>
+                  </div>
+
+                  <button class="admin-save-btn w-full py-3 rounded-xl bg-buy text-black font-bold flex items-center justify-center gap-2" data-id="${acc.id}">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Сохранить изменения
+                  </button>
+                </article>
+              `;
+            })
+            .join("")
+        : '<p class="text-slate-400 text-sm">Пока нет товаров. Добавьте первый.</p>';
+
+      viewAdmin.innerHTML = `
+        <section class="space-y-3">
+          <article class="bg-card rounded-2xl p-4 border border-white/10 space-y-3">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="font-semibold flex items-center gap-2">
+                <i data-lucide="shield" class="w-5 h-5 text-cyan-200"></i>
+                Админ-панель
+              </h2>
+              <button id="admin-logout-btn" class="px-3 py-2 rounded-xl text-xs bg-black/20 border border-white/10 text-slate-200">
+                Выйти
+              </button>
+            </div>
+            <p class="text-sm text-slate-300">
+              Добавляйте товары, редактируйте названия/описания и фотографии. Все изменения сохраняются только в этом браузере (localStorage).
+            </p>
+          </article>
+
+          <article class="bg-card rounded-2xl p-4 border border-white/10 space-y-3">
+            <h3 class="font-semibold flex items-center gap-2">
+              <i data-lucide="plus" class="w-5 h-5 text-cyan-200"></i>
+              Добавить товар
+            </h3>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="space-y-2">
+                <label class="text-xs text-slate-300">ID (число)</label>
+                <input id="admin-new-id" type="number" inputmode="numeric" class="w-full px-3 py-2 rounded-xl bg-black/20 border border-white/10 text-white" />
+              </div>
+              <div class="space-y-2">
+                <label class="text-xs text-slate-300">Кубков</label>
+                <input id="admin-new-cups" type="number" inputmode="numeric" class="w-full px-3 py-2 rounded-xl bg-black/20 border border-white/10 text-white" />
+              </div>
+            </div>
+            <div class="space-y-2">
+              <label class="text-xs text-slate-300">Название</label>
+              <input id="admin-new-title" class="w-full px-3 py-2 rounded-xl bg-black/20 border border-white/10 text-white" placeholder="Например: Brawl Stars Аккаунт" />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="space-y-2">
+                <label class="text-xs text-slate-300">Цена (₽)</label>
+                <input id="admin-new-price" type="number" inputmode="numeric" class="w-full px-3 py-2 rounded-xl bg-black/20 border border-white/10 text-white" />
+              </div>
+              <div class="space-y-2">
+                <label class="text-xs text-slate-300">Фото (файлы)</label>
+                <input id="admin-new-images-files" type="file" accept="image/*" multiple class="w-full text-sm text-slate-200" />
+              </div>
+            </div>
+            <div class="space-y-2">
+              <label class="text-xs text-slate-300">Фото (URL/base64, по одной строке)</label>
+              <textarea id="admin-new-images-urls" class="w-full px-3 py-2 rounded-xl bg-black/20 border border-white/10 text-white" rows="3" placeholder="https://...&#10;https://..."></textarea>
+            </div>
+            <div class="space-y-2">
+              <label class="text-xs text-slate-300">Описание (коротко)</label>
+              <textarea id="admin-new-shortInfo" class="w-full px-3 py-2 rounded-xl bg-black/20 border border-white/10 text-white" rows="2" placeholder="Например: Много бойцов, хороший прогресс..."></textarea>
+            </div>
+            <p id="admin-new-error" class="hidden text-sm text-red-200"></p>
+            <button id="admin-add-product-btn" class="w-full py-3 rounded-xl bg-accent text-white font-bold flex items-center justify-center gap-2">
+              <i data-lucide="plus-circle" class="w-4 h-4"></i>
+              Добавить товар
+            </button>
+          </article>
+
+          <article class="bg-card rounded-2xl p-4 border border-white/10 space-y-3">
+            <h3 class="font-semibold flex items-center gap-2">
+              <i data-lucide="list" class="w-5 h-5 text-cyan-200"></i>
+              Редактирование товаров
+            </h3>
+            <div class="space-y-3">${productsHtml}</div>
+          </article>
+        </section>
+      `;
+      lucide.createIcons();
+    }
+
     // ====== EVENTS ======
     function bindCatalogEvents() {
       document.querySelectorAll(".details-btn").forEach((btn) => {
@@ -353,11 +590,173 @@
       viewCatalog.classList.toggle("hidden", tab !== "catalog");
       viewCart.classList.toggle("hidden", tab !== "cart");
       viewSupport.classList.toggle("hidden", tab !== "support");
+      if (viewAdmin) viewAdmin.classList.toggle("hidden", tab !== "admin");
     }
 
     document.querySelectorAll(".tab-btn").forEach((btn) => {
       btn.addEventListener("click", () => setTab(btn.dataset.tab));
     });
+
+    function bindAdminEvents() {
+      const passwordInput = document.getElementById("admin-password");
+      const loginBtn = document.getElementById("admin-login-btn");
+      const loginError = document.getElementById("admin-login-error");
+      const logoutBtn = document.getElementById("admin-logout-btn");
+      const addBtn = document.getElementById("admin-add-product-btn");
+
+      if (loginBtn && passwordInput) {
+        loginBtn.addEventListener("click", () => {
+          const val = String(passwordInput.value || "");
+          if (val !== ADMIN_PASSWORD) {
+            loginError.textContent = "Неверный пароль.";
+            loginError.classList.remove("hidden");
+            return;
+          }
+          adminAuthed = true;
+          sessionStorage.setItem(ADMIN_AUTH_KEY, "1");
+          renderAdmin();
+          bindAdminEvents();
+        });
+      }
+
+      if (logoutBtn) {
+        logoutBtn.addEventListener("click", () => {
+          adminAuthed = false;
+          sessionStorage.removeItem(ADMIN_AUTH_KEY);
+          renderAdmin();
+          bindAdminEvents();
+        });
+      }
+
+      if (addBtn) {
+        addBtn.addEventListener("click", async () => {
+          const id = Number(document.getElementById("admin-new-id")?.value);
+          const title = String(document.getElementById("admin-new-title")?.value || "").trim();
+          const cups = Number(document.getElementById("admin-new-cups")?.value);
+          const price = Number(document.getElementById("admin-new-price")?.value);
+          const shortInfo = String(document.getElementById("admin-new-shortInfo")?.value || "").trim();
+          const imagesUrlsRaw = String(document.getElementById("admin-new-images-urls")?.value || "");
+          const filesInput = document.getElementById("admin-new-images-files");
+
+          const newError = document.getElementById("admin-new-error");
+          newError.classList.add("hidden");
+          newError.textContent = "";
+
+          if (!Number.isFinite(id) || !Number.isInteger(id) || id <= 0) {
+            newError.textContent = "Введите корректный ID (целое число > 0).";
+            newError.classList.remove("hidden");
+            return;
+          }
+          if (!title) {
+            newError.textContent = "Введите название.";
+            newError.classList.remove("hidden");
+            return;
+          }
+          if (!Number.isFinite(cups) || cups < 0 || !Number.isInteger(cups)) {
+            newError.textContent = "Введите корректные кубки (целое число >= 0).";
+            newError.classList.remove("hidden");
+            return;
+          }
+          if (!Number.isFinite(price) || price <= 0) {
+            newError.textContent = "Введите корректную цену (число > 0).";
+            newError.classList.remove("hidden");
+            return;
+          }
+          if (!shortInfo) {
+            newError.textContent = "Введите описание.";
+            newError.classList.remove("hidden");
+            return;
+          }
+          if (accounts.some((a) => a.id === id)) {
+            newError.textContent = `ID ${id} уже существует. Используйте другой ID.`;
+            newError.classList.remove("hidden");
+            return;
+          }
+
+          let images = normalizeImagesInput(imagesUrlsRaw);
+          if (filesInput && filesInput.files && filesInput.files.length) {
+            const fileImages = await readFilesAsDataUrls(filesInput.files);
+            images = images.concat(fileImages);
+          }
+
+          if (!images.length) {
+            newError.textContent = "Добавьте хотя бы одно фото (URL или файл).";
+            newError.classList.remove("hidden");
+            return;
+          }
+
+          accounts.push({ id, title, cups, price, shortInfo, images });
+          saveArray(PRODUCTS_KEY, accounts);
+
+          // Связанные данные могут ссылаться на удаленные товары.
+          sanitizeCartPurchases();
+
+          // Обновляем UI всех вкладок.
+          renderCatalog();
+          renderCart();
+          renderAdmin();
+          bindAdminEvents();
+        });
+      }
+
+      document.querySelectorAll(".admin-save-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = Number(btn.dataset.id);
+          const product = getById(id);
+          if (!product) return;
+
+          const title = String(document.querySelector(`.admin-edit-title[data-id="${id}"]`)?.value || "").trim();
+          const cups = Number(document.querySelector(`.admin-edit-cups[data-id="${id}"]`)?.value);
+          const price = Number(document.querySelector(`.admin-edit-price[data-id="${id}"]`)?.value);
+          const shortInfo = String(document.querySelector(`.admin-edit-shortInfo[data-id="${id}"]`)?.value || "").trim();
+          const imagesUrlsRaw = String(document.querySelector(`.admin-edit-images-urls[data-id="${id}"]`)?.value || "");
+          const imagesFilesInput = document.querySelector(`.admin-edit-images-files[data-id="${id}"]`);
+
+          if (!title || !Number.isFinite(cups) || !Number.isInteger(cups) || cups < 0 || !Number.isFinite(price) || price <= 0 || !shortInfo) {
+            alert("Проверьте введенные поля товара.");
+            return;
+          }
+
+          let images = normalizeImagesInput(imagesUrlsRaw);
+          if (imagesFilesInput && imagesFilesInput.files && imagesFilesInput.files.length) {
+            const fileImages = await readFilesAsDataUrls(imagesFilesInput.files);
+            images = images.concat(fileImages);
+          }
+          images = Array.from(new Set(images)); // простая дедупликация
+
+          if (!images.length) {
+            alert("У товара должно быть хотя бы одно фото.");
+            return;
+          }
+
+          product.title = title;
+          product.cups = cups;
+          product.price = price;
+          product.shortInfo = shortInfo;
+          product.images = images;
+
+          saveArray(PRODUCTS_KEY, accounts);
+          sanitizeCartPurchases();
+          renderCatalog();
+          renderCart();
+          renderAdmin();
+          bindAdminEvents();
+        });
+      });
+
+      document.querySelectorAll(".admin-delete-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = Number(btn.dataset.id);
+          accounts = accounts.filter((a) => a.id !== id);
+          saveArray(PRODUCTS_KEY, accounts);
+          sanitizeCartPurchases();
+          renderCatalog();
+          renderCart();
+          renderAdmin();
+          bindAdminEvents();
+        });
+      });
+    }
 
     // ====== PRODUCT MODAL ======
     const productModal = document.getElementById("product-modal");
@@ -447,8 +846,10 @@
     renderCatalog();
     renderCart();
     renderSupport();
+    renderAdmin();
     setTab("catalog");
     lucide.createIcons();
+    bindAdminEvents();
   </script>
 </body>
 </html>
